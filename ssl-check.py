@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 #
 #
 # From hergla github
@@ -19,8 +19,41 @@ from cryptography import x509
 #from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives import serialization
 import ctypes
+from ctypes.util import find_library
+import platform
 
-libcrypto = ctypes.CDLL("libcrypto.so")
+def load_libcrypto():
+    system = platform.system()
+    libraries = []
+    if system == "Darwin":
+        # Liste der möglichen versionierten Pfade unter macOS
+        # Die unversionierte 'libcrypto.dylib' führt zum Crash!
+        # Zeigt alle Bibliotheken an, die das 'ssh' Tool benutzt
+        # otool -L /usr/bin/ssh | grep libcrypto
+        libraries = [
+            "/usr/lib/libcrypto.3.dylib",    
+            "/usr/lib/libcrypto.46.dylib",  
+            "/usr/lib/libcrypto.44.dylib",  
+            "/usr/lib/libcrypto.42.dylib",
+            "/usr/lib/libcrypto.0.9.8.dylib" 
+        ]
+    if system == "Linux":
+        path = find_library("crypto")
+        libraries = [path]
+
+    for lib_path in libraries:
+        try:
+            lib = ctypes.CDLL(lib_path)
+            print(f"Erfolgreich geladen: {lib_path}")
+            return lib
+        except OSError:
+            continue
+            
+    return None
+
+libcrypto = load_libcrypto()
+libcrypto.OpenSSL_version.restype = ctypes.c_char_p
+print(f"Version Info: {libcrypto.OpenSSL_version(0).decode('utf-8')}")
 
 def get_validation_error_text(errno):
     # Definition der C-Funktions-Signatur
