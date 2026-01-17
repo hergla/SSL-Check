@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 #
-#
 # From hergla github
 #
 # SSL Certificate Check host/port.
