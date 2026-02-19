@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TLS Certificate Inspector</title>
+    <link rel="stylesheet" href="/static/bootstrap.min.css">
+    <link rel="stylesheet" href="/static/bootstrap-icons.css">
+    <style>
+        body { background-color: #f4f7f6; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; display: flex; flex-direction: column; min-height: 100vh; }
+        .content { flex: 1; }
+        .card { border: none; box-shadow: 0 0.125rem 0.25rem rgba(0,0,0,0.075); border-radius: 10px; }
+        .details-label { font-weight: bold; color: #6c757d; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.5px; }
+        .details-value { font-family: 'SFMono-Regular', Menlo, Monaco, Consolas, monospace; font-size: 0.9rem; word-break: break-all; color: #212529; }
+        pre.pem-block { background: #212529; color: #f8f9fa; padding: 12px; border-radius: 5px; font-size: 0.75rem; white-space: pre-wrap; }
+        .revocation-box { background: #fff3cd; border-left: 4px solid #ffc107; padding: 12px; font-size: 0.8rem; border-radius: 0 5px 5px 0; margin-top: 15px; }
+        .protocol-badge { background-color: #e8f0fe; color: #1967d2; font-weight: bold; padding: 4px 8px; border-radius: 4px; border: 1px solid #d2e3fc; }
+        footer a { color: #6c757d; text-decoration: none; }
+        footer a:hover { color: #0d6efd; text-decoration: underline; }
+        summary { cursor: pointer; transition: background 0.2s; }
+        summary:hover { background-color: #ececec !important; }
+    </style>
+</head>
+<body>
+<div class="content container py-5">
+    <h2 class="mb-4 text-primary d-flex align-items-center">
+        <i class="bi bi-shield-lock-fill me-2"></i> TLS Certificate Inspector
+    </h2>
+    
+    <div class="card p-4 mb-4">
+        <form method="POST" class="row g-3">
+            <div class="col-md-8">
+                <label class="form-label fw-bold small">Hostname / FQDN</label>
+                <input type="text" name="server_host" class="form-control" placeholder="e.g. google.com" value="{{ host or '' }}" required>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label fw-bold small">Port</label>
+                <input type="number" name="server_port" class="form-control" value="{{ port or 443 }}">
+            </div>
+            <div class="col-md-2 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary w-100">Inspect</button>
+            </div>
+        </form>
+    </div>
+
+    {% if error %}
+    <div class="alert alert-danger shadow-sm border-0 d-flex align-items-center">
+        <i class="bi bi-exclamation-triangle-fill me-2"></i> {{ error }}
+    </div>
+    {% endif %}
+
+    {% if data %}
+    {% if data.errno != 0 %}
+    <div class="alert alert-warning shadow-sm border-0 d-flex align-items-center mb-4">
+        <i class="bi bi-shield-exclamation me-3 fs-3"></i>
+        <div>
+            <h6 class="alert-heading mb-1 fw-bold">Untrusted Certificate</h6>
+            <p class="mb-0 small">The certificate chain could not be verified by the local trust store. <br>
+               <strong>OpenSSL Error Code:</strong> {{ data.errno }} ({{ data.error_msg }})</p>
+        </div>
+    </div>
+    {% endif %}
+    <div class="card mb-4">
+        <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center border-bottom">
+            <div>
+                <span class="text-muted">Result for:</span> 
+                <strong class="ms-1">{{ host }}:{{ port }}</strong>
+            </div>
+            <span class="badge {{ 'bg-success' if data.valid else 'bg-danger' }} rounded-pill px-3 py-2">
+                {{ 'VALID' if data.valid else 'INVALID' }}
+            </span>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-7">
+                    <div class="mb-3">
+                        <div class="details-label">Subject</div>
+                        <div class="details-value text-primary fw-bold">{{ data.subject }}</div>
+                    </div>
+                    <div class="mb-3">
+                        <div class="details-label">Issuer</div>
+                        <div class="details-value">{{ data.issuer }}</div>
+                    </div>
+                    <div class="mb-3">
+                        <div class="details-label">Subject Alternative Names (SANs)</div>
+                        <div class="details-value small text-muted">
+                            {{ data.sans | join(', ') if data.sans else 'None' }}
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <div class="details-label">Key Usage / Purposes</div>
+                        <div class="details-value">
+                            {% for u in data.usage %}
+                                <span class="badge bg-light text-dark border me-1 fw-normal">{{ u }}</span>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <div class="details-label">Serial Number</div>
+                        <div class="details-value small text-uppercase">{{ data.serial }}</div>
+                    </div>
+                </div>
+                
+                <div class="col-md-5 border-start">
+                    <div class="mb-3">
+                        <div class="details-label text-primary">Connection Protocol</div>
+                        <div class="details-value"><span class="protocol-badge">{{ data.tls }}</span></div>
+                    </div>
+                    <div class="mb-3">
+                        <div class="details-label">Public Key Algorithm</div>
+                        <div class="details-value">{{ data.pk_algo }} <br><span class="small text-muted">{{ data.key_info }}</span></div>
+                    </div>
+                    <div class="mb-3">
+                        <div class="details-label">Signature Algorithm</div>
+                        <div class="details-value fw-bold">{{ data.sig_alg }}</div>
+                    </div>
+                    <div class="mb-3">
+                        <div class="details-label">Validity</div>
+                        <div class="details-value">
+                            Expires: <span class="fw-bold">{{ data.until }}</span><br>
+                            <span class="text-{{ 'success' if data.days > 30 else 'warning' }}">
+                                ({{ data.days }} days remaining)
+                            </span>
+                        </div>
+                    </div>
+                    
+                    <div class="revocation-box shadow-sm">
+                        <div class="details-label text-dark mb-1">Revocation (CRL/OCSP)</div>
+                        {% if data.ocsps %}
+                            <div class="small text-truncate"><strong>OCSP:</strong> {{ data.ocsps | join(', ') }}</div>
+                        {% endif %}
+                        {% if data.crls %}
+                            <div class="small text-truncate"><strong>CRL:</strong> {{ data.crls | join(', ') }}</div>
+                        {% endif %}
+                        {% if not data.ocsps and not data.crls %}
+                            <span class="text-muted fst-italic">No revocation endpoints found in certificate.</span>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <hr class="my-4">
+            <h6 class="mb-3 text-muted fw-bold"><i class="bi bi-diagram-3-fill me-2"></i>Certificate Trust Chain</h6>
+            
+            {% for cert in chain %}
+            <details class="mb-2 border rounded overflow-hidden" {{ 'open' if loop.first else '' }}>
+                <summary class="p-2 bg-light d-flex justify-content-between align-items-center">
+                    <span class="small"><strong>#{{ loop.index }}</strong> {{ cert.sub }}</span>
+                    <i class="bi bi-chevron-expand text-muted"></i>
+                </summary>
+                <div class="p-3 bg-white">
+                    <div class="mb-3 small">
+                        <div class="details-label">Issuer</div>
+                        <div class="details-value">{{ cert.iss }}</div>
+                    </div>
+                    {% if cert.crls or cert.ocsps %}
+                    <div class="mb-3 p-2 bg-light rounded small border">
+                        <div class="details-label mb-1">Intermediate Revocation Endpoints</div>
+                        {% for c in cert.crls %} <div class="text-truncate text-muted"><i class="bi bi-link-45deg"></i> CRL: {{ c }}</div> {% endfor %}
+                        {% for o in cert.ocsps %} <div class="text-truncate text-muted"><i class="bi bi-link-45deg"></i> OCSP: {{ o }}</div> {% endfor %}
+                    </div>
+                    {% endif %}
+                    <div class="details-label mb-1">PEM Encoded Certificate</div>
+                    <pre class="pem-block mb-0">{{ cert.pem }}</pre>
+                </div>
+            </details>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<footer class="text-center text-muted py-4 small bg-white border-top mt-auto">
+    <div class="container">
+        TLS Certificate Inspector &bull; Last Update: {{ now }} &bull; 
+        <i class="bi bi-github ms-2"></i> <a href="https://github.com/hergla/SSL-Check" target="_blank">Based on github.com/hergla/SSL-Check</a>
+    </div>
+</footer>
+</body>
+</html>

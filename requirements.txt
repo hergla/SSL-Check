@@ -1,0 +1,10 @@
+# Web Framework
+Flask==3.0.0
+
+# SSL & Kryptographie (für SSLCheck Klasse)
+pyOpenSSL==23.3.0
+cryptography==41.0.7
+
+# Server (optional, falls du nicht den Flask-Debug-Server nutzt)
+gunicorn==21.2.0
+

@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SSL Certificate Inspector</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='bootstrap.min.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='bootstrap-icons.css') }}">
+    <style>
+        html, body { height: 100%; margin: 0; }
+        body { display: flex; flex-direction: column; background-color: #f8f9fa; }
+        .content-wrapper { flex: 1 0 auto; }
+        .card { border: none; border-radius: 10px; box-shadow: 0 0.125rem 0.25rem rgba(0,0,0,0.075); }
+        .details-label { font-weight: bold; color: #6c757d; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px; }
+        .details-value { font-family: 'Courier New', monospace; font-size: 0.9rem; word-break: break-all; color: #212529; }
+        pre { font-size: 0.7rem; background: #212529; color: #0dcaf0; padding: 10px; border-radius: 5px; margin-top: 10px; }
+        summary { cursor: pointer; font-weight: 500; color: #495057; }
+        .badge-eku { background-color: #e0f7fa; color: #006064; border: 1px solid #b2ebf2; font-weight: normal; }
+        footer { flex-shrink: 0; background-color: #ffffff; }
+    </style>
+</head>
+<body>
+
+<div class="content-wrapper">
+    <div class="container py-4">
+        <h2 class="mb-4 text-primary"><i class="bi bi-shield-check"></i> SSL Inspector</h2>
+
+        <div class="card p-4 mb-4">
+            <form method="POST" class="row g-3">
+                <div class="col-md-8">
+                    <label class="form-label fw-bold">Hostname / FQDN</label>
+                    <input type="text" name="server_host" class="form-control" placeholder="dns-name.olb.de" value="{{ host if host else '' }}" required>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label fw-bold">Port</label>
+                    <input type="number" name="server_port" class="form-control" value="{{ port }}">
+                </div>
+                <div class="col-md-2 d-flex align-items-end">
+                    <button type="submit" class="btn btn-primary w-100">Prüfen</button>
+                </div>
+            </form>
+        </div>
+
+        {% if error %}
+        <div class="alert alert-danger"><i class="bi bi-exclamation-triangle-fill me-2"></i>{{ error }}</div>
+        {% endif %}
+
+        {% if data %}
+        <div class="card mb-3">
+            <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+                <h5 class="mb-0 text-muted">Host: <span class="text-dark">{{ host }}</span></h5>
+                <span class="badge {{ 'bg-success' if data.valid else 'bg-danger' }} rounded-pill px-3">
+                    {{ 'VALIDE' if data.valid else 'UNGÜLTIG' }}
+                </span>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-7">
+                        <div class="mb-3">
+                            <div class="details-label">Subject</div>
+                            <div class="details-value">{{ data.subject }}</div>
+                        </div>
+                        <div class="mb-3">
+                            <div class="details-label">Issuer</div>
+                            <div class="details-value text-primary">{{ data.issuer }}</div>
+                        </div>
+                        <div class="mb-3">
+                            <div class="details-label">SANs</div>
+                            <div class="details-value small text-muted">{{ data.sans | join(', ') }}</div>
+                        </div>
+                        <div class="mb-3">
+                            <div class="details-label">Key Usage</div>
+                            <div class="details-value">
+                                {% for u in data.usage %}<span class="badge bg-light text-dark border me-1 fw-normal">{{ u }}</span>{% endfor %}
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <div class="details-label">Extended Key Usage (EKU)</div>
+                            <div class="details-value">
+                                {% for eu in data.extended_usage %}<span class="badge badge-eku me-1">{{ eu }}</span>{% endfor %}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-5 border-start">
+                        <div class="mb-3">
+                            <div class="details-label">Algorithmus & Signatur</div>
+                            <div class="details-value">{{ data.key_type }}</div>
+                            <div class="small text-muted">{{ data.sig_alg }}</div>
+                        </div>
+                        <div class="mb-3">
+                            <div class="details-label">Gültigkeit</div>
+                            <div class="details-value">{{ data.until }}</div>
+                            <div class="h3 {{ 'text-success' if data.days > 30 else 'text-danger' }}">{{ data.days }} Tage</div>
+                        </div>
+                        <div class="mb-3">
+                            <div class="details-label">TLS / X.509</div>
+                            <div class="details-value"><span class="badge bg-dark me-1">{{ data.tls }}</span><span class="badge bg-secondary">V{{ data.version }}</span></div>
+                        </div>
+                        <div class="mb-0">
+                            <div class="details-label">Seriennummer</div>
+                            <div class="details-value small">{{ data.serial }}</div>
+                        </div>
+                    </div>
+                </div>
+
+                <hr class="my-4">
+
+                <h6 class="text-muted mb-3 fw-bold">Zertifikatskette (Trust Chain)</h6>
+                {% if chain %}
+                    {% for cert in chain %}
+                    <details class="mb-2 border rounded bg-white">
+                        <summary class="p-2 bg-light">
+                            <span class="badge bg-secondary me-2">{{ loop.index }}</span>
+                            <span class="small">{{ cert.sub[:80] }}...</span>
+                        </summary>
+                        <div class="p-3">
+                            <div class="mb-2 small text-break"><strong>Subject:</strong> {{ cert.sub }}</div>
+                            <div class="mb-2 small text-break"><strong>Issuer:</strong> {{ cert.iss }}</div>
+                            <pre><code>{{ cert.pem }}</code></pre>
+                        </div>
+                    </details>
+                    {% endfor %}
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<footer class="text-center text-muted py-3 border-top mt-3">
+    <div class="container">
+        <p class="mb-1" style="font-size: 0.75rem;">SSL Checker Web Service &bull; Generiert am {{ now }}</p>
+        <div class="mb-1">
+            <a href="https://github.com/hergla/SSL-Check" target="_blank" class="text-decoration-none text-secondary small">
+                <i class="bi bi-github"></i> Based on https://github.com/hergla/SSL-Check
+            </a>
+        </div>
+        <p class="mb-0" style="font-size: 0.7rem;">&copy; 2026 hergla</p>
+    </div>
+</footer>
+
+</body>
+</html>

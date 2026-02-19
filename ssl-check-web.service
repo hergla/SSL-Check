@@ -1,0 +1,34 @@
+# goes to /etc/systemd/system/
+[Unit]
+Description=Gunicorn SSL Inspector Service (venv)
+After=network.target
+
+[Service]
+User=b12425
+Group=DomUsr
+# Pfad zu deinem Projektordner (bitte anpassen!)
+WorkingDirectory=/home/b12425/PythonWorkspace/SSL-Check
+
+# Hier definieren wir den Pfad zum venv/bin
+# Das sorgt dafür, dass Gunicorn die Bibliotheken aus dem venv findet
+Environment="PATH=/home/b12425/py3venv/bin"
+
+# Wir rufen Gunicorn direkt über den absoluten Pfad im venv auf
+PermissionsStartOnly=true
+ExecStartPre=/usr/bin/mkdir -p /var/log/ssl-checker
+ExecStartPre=/usr/bin/chown -R b12425:DomUsr /var/log/ssl-checker
+
+ExecStart=/home/b12425/py3venv/bin/gunicorn \
+    --workers 3 \
+    --bind 0.0.0.0:5000 \
+    --certfile /etc/olbcert/fullchain.pem \
+    --keyfile /etc/olbcert/server.key \
+    --access-logfile /var/log/ssl-checker/ssl-inspector-access.log \
+    --error-logfile /var/log/ssl-checker/ssl-inspector-error.log \
+    --access-logformat '%(h)s %(l)s %(u)s %(t)s "%(r)s" %(s)s %(b)s "%(f)s" "%(a)s"' \
+    ssl-check-web:app
+
+[Install]
+WantedBy=multi-user.target
+
+
