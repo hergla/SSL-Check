@@ -194,5 +194,5 @@ def index():
 
 if __name__ == '__main__':
     # Flask mit SSL starten
-    app.run(host="0.0.0.0", debug=True, port=5000, ssl_context=('/etc/olbcert/fullchain.pem', '/etc/olbcert/server.key'))
+    app.run(host="0.0.0.0", debug=True, port=5000)  # , ssl_context=('/etc/mycert/fullchain.pem', '/etc/mycert/server.key'))
 
