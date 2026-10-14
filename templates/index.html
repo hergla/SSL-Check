@@ -10,7 +10,7 @@
         body { background-color: #f4f7f6; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; display: flex; flex-direction: column; min-height: 100vh; }
         .content { flex: 1; }
         .card { border: none; box-shadow: 0 0.125rem 0.25rem rgba(0,0,0,0.075); border-radius: 10px; }
-        .details-label { font-weight: bold; color: #6c757d; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.5px; }
+        .details-label { font-weight: bold; color: #6c757d; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px; }
         .details-value { font-family: 'SFMono-Regular', Menlo, Monaco, Consolas, monospace; font-size: 0.9rem; word-break: break-all; color: #212529; }
         pre.pem-block { background: #212529; color: #f8f9fa; padding: 12px; border-radius: 5px; font-size: 0.75rem; white-space: pre-wrap; }
         .revocation-box { background: #fff3cd; border-left: 4px solid #ffc107; padding: 12px; font-size: 0.8rem; border-radius: 0 5px 5px 0; margin-top: 15px; }
@@ -149,9 +149,13 @@
                     <i class="bi bi-chevron-expand text-muted"></i>
                 </summary>
                 <div class="p-3 bg-white">
-                    <div class="mb-3 small">
-                        <div class="details-label">Issuer</div>
+                    <div class="mb-3 small d-flex align-items-center gap-2">
+                        <div class="details-label">Issuer:</div>
                         <div class="details-value">{{ cert.iss }}</div>
+                    </div>
+                    <div class="mb-3 small d-flex align-items-center gap-2">
+                        <div class="details-label">Not valid after:</div>
+                        <div class="details-value">{{ cert.notValidAfter }}</div>
                     </div>
                     {% if cert.crls or cert.ocsps %}
                     <div class="mb-3 p-2 bg-light rounded small border">

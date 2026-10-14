@@ -18,6 +18,7 @@ from cryptography import x509
 #from cryptography.hazmat.backends import default_backend
 #from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa, ec
 import ctypes
 from ctypes.util import find_library
 import platform
@@ -31,11 +32,11 @@ def load_libcrypto():
         # Zeigt alle Bibliotheken an, die das 'ssh' Tool benutzt
         # otool -L /usr/bin/ssh | grep libcrypto
         libraries = [
-            "/usr/lib/libcrypto.3.dylib",    
-            "/usr/lib/libcrypto.46.dylib",  
-            "/usr/lib/libcrypto.44.dylib",  
+            "/usr/lib/libcrypto.3.dylib",
+            "/usr/lib/libcrypto.46.dylib",
+            "/usr/lib/libcrypto.44.dylib",
             "/usr/lib/libcrypto.42.dylib",
-            "/usr/lib/libcrypto.0.9.8.dylib" 
+            "/usr/lib/libcrypto.0.9.8.dylib"
         ]
     if system == "Linux":
         path = find_library("crypto")
@@ -48,7 +49,7 @@ def load_libcrypto():
             return lib
         except OSError:
             continue
-            
+
     return None
 
 libcrypto = load_libcrypto()
@@ -141,6 +142,23 @@ class SSLCheck:
         print(f"Valid until: {cert_crypto.not_valid_after_utc} - notBefore: {cert_crypto.not_valid_before_utc}")
         print(f"Version: {cert_crypto.version} Serial:{cert_crypto.serial_number}")
         print(f"Issuer: {cert_crypto.issuer.rfc4514_string()}")
+
+        pub_key = cert_crypto.public_key()
+        key_size = f"{pub_key.key_size}" if hasattr(pub_key, 'key_size') else 'N/A'
+        print(f"Keysize: {key_size}")
+
+        if isinstance(pub_key, rsa.RSAPublicKey):
+            key_type = f"RSA {key_size} bit"
+        elif isinstance(pub_key, ec.EllipticCurvePublicKey):
+            key_type = f"ECDSA {pub_key.curve.name} ({pub_key.key_size} bit)"
+        else:
+            key_type = f"Other Key ({pub_key.key_size} bit)"
+
+        # key_type = pub_key.__class__.__name__.replace("_", "").replace("RSAPublicKey", "RSA")
+        print(f"Key Type: {key_type}")
+
+        sig_alg = cert_crypto.signature_algorithm_oid._name if cert_crypto.signature_hash_algorithm else "N/A"
+        print(f"Signature Algorithm: {sig_alg}")
 
         print("\nCA Chain:")
         for cert_openssl in chain:

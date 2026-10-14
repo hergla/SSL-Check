@@ -31,7 +31,11 @@ class SSLCheck:
                 for full_name in point.full_name:
                     crls.append(full_name.value)
         except: pass
-        
+<<<<<<< HEAD
+
+=======
+
+>>>>>>> c56abf5 (Add web interface and requirements)
         try:
             aia = cert_obj.extensions.get_extension_for_class(x509.AuthorityInformationAccess)
             for desc in aia.value:
@@ -144,6 +148,10 @@ class SSLCheck:
                 self.chain_info.append({
                     "sub": c_c.subject.rfc4514_string(),
                     "iss": c_c.issuer.rfc4514_string(),
+<<<<<<< HEAD
+=======
+                    "notValidAfter": c_c.not_valid_after_utc,
+>>>>>>> c56abf5 (Add web interface and requirements)
                     "pem": c_c.public_bytes(serialization.Encoding.PEM).decode('utf-8'),
                     "crls": c_crl,
                     "ocsps": c_ocsp
@@ -156,11 +164,11 @@ class SSLCheck:
         """Führt nmap ssl-enum-ciphers aus und gibt das Ergebnis zurück"""
         try:
             # -p gibt den Port an, --script das NSE Script
-            
+
             cmd = ["/usr/bin/nmap", "-Pn", "--script", "ssl-enum-ciphers", "-p", str(self.port), self.host]
             print(cmd)
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-            
+
             # Wir suchen nur den relevanten Teil der Ausgabe (ab 'ssl-enum-ciphers:')
             output = result.stdout
             if "ssl-enum-ciphers:" in output:
@@ -189,10 +197,18 @@ def index():
             nmap_res = sc.get_nmap_ciphers()
 
         except Exception as ex: e = str(ex)
-    return render_template('index.html', host=h, port=p, data=d, chain=c, error=e, 
+<<<<<<< HEAD
+    return render_template('index.html', host=h, port=p, data=d, chain=c, error=e,
+=======
+    return render_template('index.html', host=h, port=p, data=d, chain=c, error=e,
+>>>>>>> c56abf5 (Add web interface and requirements)
             nmap_data=nmap_res, now=datetime.datetime.now().strftime('%d.%m.%Y %H:%M:%S'))
 
 if __name__ == '__main__':
     # Flask mit SSL starten
+<<<<<<< HEAD
     app.run(host="0.0.0.0", debug=True, port=5000)  # , ssl_context=('/etc/mycert/fullchain.pem', '/etc/mycert/server.key'))
+=======
+    app.run(host="0.0.0.0", debug=True, port=5000, ssl_context=('/etc/olbcert/fullchain.pem', '/etc/olbcert/server.key'))
+>>>>>>> c56abf5 (Add web interface and requirements)
 
