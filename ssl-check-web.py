@@ -31,11 +31,6 @@ class SSLCheck:
                 for full_name in point.full_name:
                     crls.append(full_name.value)
         except: pass
-<<<<<<< HEAD
-
-=======
-
->>>>>>> c56abf5 (Add web interface and requirements)
         try:
             aia = cert_obj.extensions.get_extension_for_class(x509.AuthorityInformationAccess)
             for desc in aia.value:
@@ -148,10 +143,7 @@ class SSLCheck:
                 self.chain_info.append({
                     "sub": c_c.subject.rfc4514_string(),
                     "iss": c_c.issuer.rfc4514_string(),
-<<<<<<< HEAD
-=======
                     "notValidAfter": c_c.not_valid_after_utc,
->>>>>>> c56abf5 (Add web interface and requirements)
                     "pem": c_c.public_bytes(serialization.Encoding.PEM).decode('utf-8'),
                     "crls": c_crl,
                     "ocsps": c_ocsp
