@@ -197,18 +197,10 @@ def index():
             nmap_res = sc.get_nmap_ciphers()
 
         except Exception as ex: e = str(ex)
-<<<<<<< HEAD
     return render_template('index.html', host=h, port=p, data=d, chain=c, error=e,
-=======
-    return render_template('index.html', host=h, port=p, data=d, chain=c, error=e,
->>>>>>> c56abf5 (Add web interface and requirements)
             nmap_data=nmap_res, now=datetime.datetime.now().strftime('%d.%m.%Y %H:%M:%S'))
 
 if __name__ == '__main__':
     # Flask mit SSL starten
-<<<<<<< HEAD
-    app.run(host="0.0.0.0", debug=True, port=5000)  # , ssl_context=('/etc/mycert/fullchain.pem', '/etc/mycert/server.key'))
-=======
     app.run(host="0.0.0.0", debug=True, port=5000, ssl_context=('/etc/olbcert/fullchain.pem', '/etc/olbcert/server.key'))
->>>>>>> c56abf5 (Add web interface and requirements)
 
