@@ -4,6 +4,7 @@
 #
 # SSL Certificate Check host/port.
 #
+# V0.1
 
 import socket
 import sys
@@ -155,6 +156,7 @@ class SSLCheck:
                 print("Root CA:")
             else:
                 print("Intermediate CA:")
+            print(f"Not valid after: {cert_crypto.not_valid_after_utc}")
             pem_ca = cert_crypto.public_bytes(encoding=serialization.Encoding.PEM)
             print(pem_ca.decode('utf-8'))
         ssl_con.close()
