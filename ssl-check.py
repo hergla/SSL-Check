@@ -4,7 +4,7 @@
 #
 # SSL Certificate Check host/port.
 #
-# V0.1
+# V0.2
 
 import socket
 import sys
@@ -15,8 +15,6 @@ import ssl
 from OpenSSL import SSL, crypto
 
 from cryptography import x509
-#from cryptography.hazmat.backends import default_backend
-#from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa, ec
 import ctypes
@@ -27,10 +25,6 @@ def load_libcrypto():
     system = platform.system()
     libraries = []
     if system == "Darwin":
-        # Liste der möglichen versionierten Pfade unter macOS
-        # Die unversionierte 'libcrypto.dylib' führt zum Crash!
-        # Zeigt alle Bibliotheken an, die das 'ssh' Tool benutzt
-        # otool -L /usr/bin/ssh | grep libcrypto
         libraries = [
             "/usr/lib/libcrypto.3.dylib",
             "/usr/lib/libcrypto.46.dylib",
@@ -45,7 +39,7 @@ def load_libcrypto():
     for lib_path in libraries:
         try:
             lib = ctypes.CDLL(lib_path)
-            print(f"Erfolgreich geladen: {lib_path}")
+            # Optional: Globale Prints können bei Bedarf auch reduziert werden
             return lib
         except OSError:
             continue
@@ -53,11 +47,10 @@ def load_libcrypto():
     return None
 
 libcrypto = load_libcrypto()
-libcrypto.OpenSSL_version.restype = ctypes.c_char_p
-print(f"Version Info: {libcrypto.OpenSSL_version(0).decode('utf-8')}")
+if libcrypto:
+    libcrypto.OpenSSL_version.restype = ctypes.c_char_p
 
 def get_validation_error_text(errno):
-    # Definition der C-Funktions-Signatur
     libcrypto.X509_verify_cert_error_string.restype = ctypes.c_char_p
     libcrypto.X509_verify_cert_error_string.argtypes = [ctypes.c_long]
 
@@ -67,20 +60,22 @@ def get_validation_error_text(errno):
     return f"Unbekannter Fehler ({errno})"
 
 class SSLCheck:
-    def __init__(self, host, port):
-       self.host = host
-       self.port = port
-       self.not_valid_after_utc = None
-       self.errno = 0
-       self.error_string = None
+    def __init__(self, host, port, verbose=False):
+        self.host = host
+        self.port = port
+        self.verbose = verbose
+        self.not_valid_after_utc = None
+        self.errno = 0
+        self.error_string = None
 
+    def _log(self, *args, **kwargs):
+        """Gibt Text nur aus, wenn verbose auf True steht."""
+        if self.verbose:
+            print(*args, **kwargs)
 
     def verify_callback(self, conn, cert, errno, depth, ok):
-        # Wir geben immer True zurueck. Damit werden Cert Fehler ignoriert.
-        # Aber wir koennen den Fehler abfangen.
         if not ok:
             error_string = get_validation_error_text(errno)
-            #print(errno, error_string)
             self.errno = errno
             self.error_string = error_string
         return True
@@ -94,7 +89,7 @@ class SSLCheck:
 
     @property
     def isValid(self):
-        if self.daysValid > 0  and self.errno == 0:
+        if self.daysValid > 0 and self.errno == 0:
             return True
         return False
 
@@ -108,19 +103,23 @@ class SSLCheck:
     def get_ciphers(self):
         context = ssl.create_default_context()
         all_ciphers = context.get_ciphers()
-        print(all_ciphers)
-
+        self._log(all_ciphers)
 
     def get_cert(self):
         context = SSL.Context(SSL.TLS_CLIENT_METHOD)
         context.set_default_verify_paths()
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(2)
-        sock.connect((self.host, self.port))
+        try:
+            sock.connect((self.host, self.port))
+        except Exception as e:
+            self.verbose = True
+            self.errno = 200
+            self.error_string = e
+            self._log(f"socket connect issue: {e}")
+            return False
         sock.settimeout(None)
 
-        # Wir wollen verify und den Fehler abfangen.
-        # Durch den True return im callback geht es also weiter.
         context.set_verify(SSL.VERIFY_PEER, self.verify_callback)
         ssl_con = SSL.Connection(context=context, socket=sock)
         ssl_con.set_tlsext_host_name(self.host.encode())
@@ -131,21 +130,21 @@ class SSLCheck:
         cert = ssl_con.get_peer_certificate()
         tls_version = ssl_con.get_protocol_version_name()
 
-        print(tls_version)
-        #print(cert.get_notAfter())
+        self._log(tls_version)
         cert_crypto = cert.to_cryptography()
         self.not_valid_after_utc = cert_crypto.not_valid_after_utc
-        print(f"Subject: {cert_crypto.subject.rfc4514_string()}")
+
+        self._log(f"Subject: {cert_crypto.subject.rfc4514_string()}")
         san_extension = cert_crypto.extensions.get_extension_for_class(x509.SubjectAlternativeName)
         dns_names = san_extension.value.get_values_for_type(x509.DNSName)
-        print(f"SAN: {dns_names}")
-        print(f"Valid until: {cert_crypto.not_valid_after_utc} - notBefore: {cert_crypto.not_valid_before_utc}")
-        print(f"Version: {cert_crypto.version} Serial:{cert_crypto.serial_number}")
-        print(f"Issuer: {cert_crypto.issuer.rfc4514_string()}")
+        self._log(f"SAN: {dns_names}")
+        self._log(f"Valid until: {cert_crypto.not_valid_after_utc} - notBefore: {cert_crypto.not_valid_before_utc}")
+        self._log(f"Version: {cert_crypto.version} Serial:{cert_crypto.serial_number}")
+        self._log(f"Issuer: {cert_crypto.issuer.rfc4514_string()}")
 
         pub_key = cert_crypto.public_key()
         key_size = f"{pub_key.key_size}" if hasattr(pub_key, 'key_size') else 'N/A'
-        print(f"Keysize: {key_size}")
+        self._log(f"Keysize: {key_size}")
 
         if isinstance(pub_key, rsa.RSAPublicKey):
             key_type = f"RSA {key_size} bit"
@@ -154,36 +153,39 @@ class SSLCheck:
         else:
             key_type = f"Other Key ({pub_key.key_size} bit)"
 
-        # key_type = pub_key.__class__.__name__.replace("_", "").replace("RSAPublicKey", "RSA")
-        print(f"Key Type: {key_type}")
+        self._log(f"Key Type: {key_type}")
 
         sig_alg = cert_crypto.signature_algorithm_oid._name if cert_crypto.signature_hash_algorithm else "N/A"
-        print(f"Signature Algorithm: {sig_alg}")
+        self._log(f"Signature Algorithm: {sig_alg}")
 
-        print("\nCA Chain:")
+        self._log("\nCA Chain:")
         for cert_openssl in chain:
             cert_crypto = cert_openssl.to_cryptography()
-            try:   # CA enthaelt Basic Constraint. Ein Cert aber nicht.
+            try:
                 bc = cert_crypto.extensions.get_extension_for_class(x509.BasicConstraints)
             except x509.ExtensionNotFound:
                 continue
-            # Check if Intermediate
+
             issuer = cert_crypto.issuer.rfc4514_string()
             subject = cert_crypto.subject.rfc4514_string()
             if issuer == subject:
-                print("Root CA:")
+                self._log("Root CA:")
             else:
-                print("Intermediate CA:")
-            print(f"Not valid after: {cert_crypto.not_valid_after_utc}")
+                self._log("Intermediate CA:")
+            self._log(f"Not valid after: {cert_crypto.not_valid_after_utc}")
             pem_ca = cert_crypto.public_bytes(encoding=serialization.Encoding.PEM)
-            print(pem_ca.decode('utf-8'))
+            self._log(pem_ca.decode('utf-8'))
+
         ssl_con.close()
+        return True
 
 def parseargs():
-    parser = ArgumentParser(prog="ssl-check.py", description="SSL Certificte Checker.")
+    parser = ArgumentParser(prog="ssl-check.py", description="SSL Certificate Checker.")
     parser.add_argument('-s', '--server', dest="host", type=str,
-                        help="Hostname to check (FQDN)",  default='www.google.com')  # required=True)
-    parser.add_argument('-p', '-port', dest='port', default=443, help="TCP Port (default=443)")
+                        help="Hostname to check (FQDN)", default='www.google.com')
+    parser.add_argument('-p', '--port', dest='port', default=443, help="TCP Port (default=443)")
+    parser.add_argument('-c', '--checkdays', dest='checkdays', default=0, type=int, help="Check for days until invalid (default=0)")
+    parser.add_argument('-v', '--verbose', action='store_true', help="Verbose-Mode")
     args = parser.parse_args()
     return args
 
@@ -191,17 +193,31 @@ def parseargs():
 if __name__ == "__main__":
     args = parseargs()
 
-    sc = SSLCheck(host=args.host, port=int(args.port))
-    #sc.get_ciphers()
-    sc.get_cert()
+    sc = SSLCheck(host=args.host, port=int(args.port), verbose=args.verbose)
+
+    if not sc.get_cert():
+        sys.exit(1)
+
+    if args.checkdays > 0:
+        print("Checkdays. ", end="")
+        if sc.daysValid < args.checkdays:
+            print(f"Expires in {int(sc.daysValid)} days.")
+            sys.exit(1)
+        else:
+            print(f"Okay for {int(sc.daysValid)} days.")
+        sys.exit(0)
+
     if sc.isValid:
-        print("Certificate okay.")
+        print("Certificate okay. ", end="")
+    elif sc.daysValid < 0:
+        print(f"Certificate expired. ", end="")
     else:
         print("Certificate has issue(s):")
         print(f"Issue: {sc.issue}")
+        sys.exit(2)
     print(f"Days until invalid: {sc.daysValid:.2f}")
-
 
     if not sc.isValid:
         sys.exit(1)
     sys.exit(0)
+
