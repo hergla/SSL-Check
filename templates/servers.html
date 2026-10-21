@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Server Erfassung - TLS Inspector</title>
+    <link rel="stylesheet" href="/static/bootstrap.min.css">
+    <link rel="stylesheet" href="/static/bootstrap-icons.css">
+    <style>
+        body { background-color: #f4f7f6; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; display: flex; flex-direction: column; min-height: 100vh; }
+        .content { flex: 1; }
+        .card { border: none; box-shadow: 0 0.125rem 0.25rem rgba(0,0,0,0.075); border-radius: 10px; }
+        footer a { color: #6c757d; text-decoration: none; }
+        footer a:hover { color: #0d6efd; text-decoration: underline; }
+        .clickable-row { cursor: pointer; }
+    </style>
+</head>
+<body>
+<div class="content container py-5">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2 class="text-primary m-0 d-flex align-items-center">
+            <i class="bi bi-server me-2"></i> Server Verwaltung
+        </h2>
+        <a href="{{ url_for('index') }}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i> Zurück zur Prüfung
+        </a>
+    </div>
+
+    <!-- Flash Messages -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="alert alert-{{ category }} alert-dismissible fade show border-0 shadow-sm mb-4" role="alert">
+            {{ message }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+          </div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <!-- Neuer Server Formular -->
+    <div class="card p-4 mb-4">
+        <h5 class="card-title mb-3"><i class="bi bi-plus-circle me-1"></i> Neuen Server für täglichen Check erfassen</h5>
+        <form method="POST" class="row g-3" id="addServerForm">
+            <input type="hidden" name="action" value="add">
+            <div class="col-md-5">
+                <label class="form-label fw-bold small">Server / FQDN</label>
+                <input type="text" id="inputHost" name="host" class="form-control" placeholder="z. B. mydomain.de" value="{{ form_host or '' }}" required>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label fw-bold small">Port</label>
+                <input type="number" id="inputPort" name="port" class="form-control" value="{{ form_port or 443 }}" required>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label fw-bold small">E-Mail Adresse</label>
+                <input type="email" id="inputEmail" name="email" class="form-control" placeholder="admin@domain.de" value="{{ form_email or '' }}" required>
+            </div>
+            <div class="col-md-2 d-flex align-items-end">
+                <button type="submit" class="btn btn-success w-100"><i class="bi bi-save me-1"></i> Speichern</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Tabelle & Filter -->
+    <div class="card p-4">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="card-title m-0"><i class="bi bi-table me-1"></i> Registrierte Server</h5>
+            <!-- Suchfilter -->
+            <form method="GET" class="d-flex" style="max-width: 300px;">
+                <input type="text" name="search" class="form-control form-control-sm me-2" placeholder="Filter (Host, Email...)" value="{{ search or '' }}">
+                <button type="submit" class="btn btn-sm btn-outline-primary"><i class="bi bi-search"></i></button>
+                {% if search %}
+                    <a href="{{ url_for('servers') }}" class="btn btn-sm btn-outline-secondary ms-1"><i class="bi bi-x-circle"></i></a>
+                {% endif %}
+            </form>
+        </div>
+
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+	                <!-- <th>#</th> -->
+                        <th>Host / FQDN</th>
+                        <th>Port</th>
+                        <th>E-Mail</th>
+                        <th>Erstellt am</th>
+                        <th class="text-end">Aktionen</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for server in servers %}
+                    <tr class="clickable-row" onclick="fillForm('{{ server.host }}', '{{ server.port }}', '{{ server.email }}')">
+			<!-- <td>{{ server.id }}</td> -->
+                        <td class="fw-bold">{{ server.host }}</td>
+                        <td><span class="badge bg-light text-dark border">{{ server.port }}</span></td>
+                        <td>{{ server.email }}</td>
+                        <td class="small text-muted">{{ server.created_at }}</td>
+                        <td class="text-end" onclick="event.stopPropagation();">
+                            <!-- Edit Button (triggert Modal) -->
+                            <button type="button" class="btn btn-sm btn-outline-primary me-1" data-bs-toggle="modal" data-bs-target="#editModal{{ server.id }}">
+                                <i class="bi bi-pencil"></i>
+                            </button>
+                            <!-- Delete Form -->
+                            <form method="POST" class="d-inline" onsubmit="return confirm('Soll dieser Server wirklich gelöscht werden?');">
+                                <input type="hidden" name="action" value="delete">
+                                <input type="hidden" name="id" value="{{ server.id }}">
+                                <button type="submit" class="btn btn-sm btn-outline-danger">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="6" class="text-center text-muted py-4">Keine Server gefunden.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+	<!-- Paginierungs-Steuerung & Info -->
+        {% if total_pages > 1 %}
+        <nav class="d-flex justify-content-between align-items-center mt-3 pt-3 border-top" aria-label="Seiten Navigation">
+            <div class="text-muted small">
+                Zeige Seite <strong>{{ page }}</strong> von <strong>{{ total_pages }}</strong> (Gesamt: {{ total_count }} Server)
+            </div>
+            <ul class="pagination pagination-sm m-0">
+                <!-- Zurück-Button -->
+                <li class="page-item {% if page <= 1 %}disabled{% endif %}">
+                    <a class="page-link" href="{{ url_for('servers', search=search, page=page-1) }}" aria-label="Vorherige">
+                        <span aria-hidden="true">&laquo;</span>
+                    </a>
+                </li>
+                
+                <!-- Dynamische Seitenzahlen -->
+                {% for p in page_links %}
+                    {% if p == '...' %}
+                        <li class="page-item disabled"><span class="page-link">...</span></li>
+                    {% else %}
+                        <li class="page-item {% if p == page %}active{% endif %}">
+                            <a class="page-link" href="{{ url_for('servers', search=search, page=p) }}">{{ p }}</a>
+                        </li>
+                    {% endif %}
+                {% endfor %}
+
+                <!-- Weiter-Button -->
+                <li class="page-item {% if page >= total_pages %}disabled{% endif %}">
+                    <a class="page-link" href="{{ url_for('servers', search=search, page=page+1) }}" aria-label="Nächste">
+                        <span aria-hidden="true">&raquo;</span>
+                    </a>
+                </li>
+            </ul>
+        </nav>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Edit Modals -->
+{% for server in servers %}
+<div class="modal fade" id="editModal{{ server.id }}" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST">
+                <input type="hidden" name="action" value="edit">
+                <input type="hidden" name="id" value="{{ server.id }}">
+                <div class="modal-header">
+                    <h5 class="modal-title">Server bearbeiten #{{ server.id }}</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label fw-bold small">Server / FQDN</label>
+                        <input type="text" name="host" class="form-control" value="{{ server.host }}" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold small">Port</label>
+                        <input type="number" name="port" class="form-control" value="{{ server.port }}" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold small">E-Mail Adresse</label>
+                        <input type="email" name="email" class="form-control" value="{{ server.email }}" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button>
+                    <button type="submit" class="btn btn-primary">Speichern</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endfor %}
+
+<footer class="text-center text-muted py-4 small bg-white border-top mt-auto">
+    <div class="container">
+        TLS Certificate Inspector &bull; Last Update: {{ now }}
+    </div>
+</footer>
+
+<script src="/static/bootstrap.bundle.min.js"></script>
+<script>
+function fillForm(host, port, email) {
+    document.getElementById('inputHost').value = host;
+    document.getElementById('inputPort').value = port;
+    document.getElementById('inputEmail').value = email;
+    
+    // Sanftes Scrollen nach oben zum Formular & Fokus auf Port
+    document.getElementById('addServerForm').scrollIntoView({ behavior: 'smooth' });
+    document.getElementById('inputPort').focus();
+}
+</script>
+</body>
+</html>
+

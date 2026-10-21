@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Server bearbeiten - TLS Inspector</title>
+    <link rel="stylesheet" href="/static/bootstrap.min.css">
+    <link rel="stylesheet" href="/static/bootstrap-icons.css">
+    <style>
+        body { background-color: #f4f7f6; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; display: flex; flex-direction: column; min-height: 100vh; }
+        .content { flex: 1; }
+        .card { border: none; box-shadow: 0 0.125rem 0.25rem rgba(0,0,0,0.075); border-radius: 10px; }
+        footer a { color: #6c757d; text-decoration: none; }
+        footer a:hover { color: #0d6efd; text-decoration: underline; }
+    </style>
+</head>
+<body>
+<div class="content container py-5" style="max-width: 600px;">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2 class="text-primary m-0 d-flex align-items-center">
+            <i class="bi bi-pencil-square me-2"></i> Server bearbeiten (#{{ server.id }})
+        </h2>
+        <a href="{{ url_for('servers') }}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i> Abbrechen
+        </a>
+    </div>
+
+    <div class="card p-4">
+        <form method="POST">
+            <div class="mb-3">
+                <label class="form-label fw-bold small">Server / FQDN</label>
+                <input type="text" name="host" class="form-control" value="{{ server.host }}" required>
+            </div>
+            <div class="mb-3">
+                <label class="form-label fw-bold small">Port</label>
+                <input type="number" name="port" class="form-control" value="{{ server.port }}" required>
+            </div>
+            <div class="mb-3">
+                <label class="form-label fw-bold small">E-Mail Adresse</label>
+                <input type="email" name="email" class="form-control" value="{{ server.email }}" required>
+            </div>
+            <div class="d-flex justify-content-end gap-2 mt-4">
+                <a href="{{ url_for('servers') }}" class="btn btn-secondary">Abbrechen</a>
+                <button type="submit" class="btn btn-primary"><i class="bi bi-save me-1"></i> Änderungen speichern</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<footer class="text-center text-muted py-4 small bg-white border-top mt-auto">
+    <div class="container">
+        TLS Certificate Inspector &bull; Last Update: {{ now }}
+    </div>
+</footer>
+
+<script src="/static/bootstrap.bundle.min.js"></script>
+</body>
+</html>
+

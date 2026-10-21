@@ -23,10 +23,14 @@
 </head>
 <body>
 <div class="content container py-5">
-    <h2 class="mb-4 text-primary d-flex align-items-center">
-        <i class="bi bi-shield-lock-fill me-2"></i> TLS Certificate Inspector
-    </h2>
-    
+    <div class="d-flex justify-content-between align-items-center mb-4">
+	    <h2 class="text-primary m-0 d-flex align-items-center">
+		<i class="bi bi-shield-lock-fill me-2"></i> TLS Certificate Inspector
+	    </h2>
+	    <a href="{{ url_for('servers') }}" class="btn btn-outline-primary">
+		<i class="bi bi-list-task me-1"></i> Server Verwaltung
+	    </a>
+    </div>
     <div class="card p-4 mb-4">
         <form method="POST" class="row g-3">
             <div class="col-md-8">
