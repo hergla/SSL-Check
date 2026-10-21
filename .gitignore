@@ -1,6 +1,10 @@
 selinux.txt
 ssl-check.py.localdomain
 ssl-check-web.py.localdomain
+import_dns.py
+manage-dummies.py
+ssl-audit.py
+database/
 =======
 gunicorn-run.sh
 ssl-check-web.service

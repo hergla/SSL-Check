@@ -3,14 +3,41 @@ import socket
 import datetime
 import subprocess
 import select
+import sqlite3
 from datetime import timezone, timedelta
-from flask import Flask, render_template, request
+from flask import Flask, render_template, request, redirect, url_for, flash
 from OpenSSL import SSL, crypto
 from cryptography import x509
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa, ec
 
 app = Flask(__name__)
+app.secret_key = 'super-secret-key-change-this'  # Für Flash-Messages benötigt
+
+DB_FILE = 'database/servers.db'
+
+def get_db_connection():
+    conn = sqlite3.connect(DB_FILE)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+def init_db():
+    conn = get_db_connection()
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS servers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            host TEXT NOT NULL,
+            port INTEGER NOT NULL DEFAULT 443,
+            email TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(host, port, email)
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+# Datenbank beim Start initialisieren
+init_db()
 
 class SSLCheck:
     def __init__(self, host, port):
@@ -22,7 +49,6 @@ class SSLCheck:
         self.error_string = ""
 
     def get_extension_details(self, cert_obj):
-        """Extrahiert CRL und OCSP Links aus den Zertifikat-Erweiterungen"""
         crls = []
         ocsps = []
         try:
@@ -42,14 +68,12 @@ class SSLCheck:
     def verify_callback(self, conn, cert, errno, depth, ok):
         if not ok:
             self.errno = errno
-            # Wir nutzen das FFI (Foreign Function Interface) von OpenSSL
-            # um die C-Funktion direkt anzusprechen
             error_ptr = SSL._lib.X509_verify_cert_error_string(errno)
             if error_ptr:
                 self.error_string = SSL._ffi.string(error_ptr).decode('utf-8')
             else:
                 self.error_string = f"Unknown Error ({errno})"
-        return True   # Immer True. Auch wenn wir dem Cert nicht trauen.
+        return True
 
     def get_cert(self):
         context = SSL.Context(SSL.TLS_CLIENT_METHOD)
@@ -79,13 +103,11 @@ class SSLCheck:
         now = datetime.datetime.now(tz=timezone.utc)
         days = (c_crypt.not_valid_after_utc - now) / timedelta(days=1)
 
-        # SANs extrahieren
         try:
             san_ext = c_crypt.extensions.get_extension_for_class(x509.SubjectAlternativeName)
             sans = san_ext.value.get_values_for_type(x509.DNSName)
         except: sans = []
 
-        # Key Usage
         usages = []
         try:
             u_ext = c_crypt.extensions.get_extension_for_class(x509.KeyUsage)
@@ -94,7 +116,6 @@ class SSLCheck:
                 if getattr(u_ext.value, attr): usages.append(name)
         except: pass
 
-        # Dynamische Key-Erkennung & OpenSSL Style Namen
         pub_key = c_crypt.public_key()
         if isinstance(pub_key, rsa.RSAPublicKey):
             pk_algo, k_info = "rsaEncryption", f"RSA {pub_key.key_size} bit"
@@ -106,12 +127,10 @@ class SSLCheck:
         else:
             pk_algo, k_info = "unknown", "Unbekannt"
 
-        # Seriennummer formatieren (AA:BB:CC...)
         raw_hex = format(c_crypt.serial_number, 'x').upper()
         if len(raw_hex) % 2 != 0: raw_hex = '0' + raw_hex
         formatted_serial = ":".join(raw_hex[i:i+2] for i in range(0, len(raw_hex), 2))
 
-        # Sperrinformationen (End-Entity)
         crl_list, ocsp_list = self.get_extension_details(c_crypt)
 
         self.results = {
@@ -134,7 +153,6 @@ class SSLCheck:
             "version": c_crypt.version.name
         }
 
-        # Kette verarbeiten
         chain = ssl_con.get_peer_cert_chain()
         if chain:
             for c_os in chain:
@@ -153,15 +171,9 @@ class SSLCheck:
         sock.close()
 
     def get_nmap_ciphers(self):
-        """Führt nmap ssl-enum-ciphers aus und gibt das Ergebnis zurück"""
         try:
-            # -p gibt den Port an, --script das NSE Script
-
             cmd = ["/usr/bin/nmap", "-Pn", "--script", "ssl-enum-ciphers", "-p", str(self.port), self.host]
-            print(cmd)
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-
-            # Wir suchen nur den relevanten Teil der Ausgabe (ab 'ssl-enum-ciphers:')
             output = result.stdout
             if "ssl-enum-ciphers:" in output:
                 return output.split("ssl-enum-ciphers:")[1].split("|_")[0].strip()
@@ -170,6 +182,68 @@ class SSLCheck:
             return "Nmap scan timed out."
         except Exception as e:
             return f"Error running nmap: {str(e)}"
+
+def validate_server_host(host, port, email=None, exclude_id=None):
+    """Prüft FQDN, DNS, Port-Erreichbarkeit, TLS und Dubletten"""
+
+    # 0. FQDN-Prüfung: Muss mindestens einen Punkt enthalten
+    if '.' not in host:
+        return False, f"Ungültiger FQDN: '{host}' muss einen Domain-Anteil enthalten (z. B. mit einem Punkt)."
+
+    # 1. Dubletten-Prüfung in der Datenbank
+    if email:
+        conn = get_db_connection()
+        if exclude_id:
+            existing = conn.execute(
+                'SELECT id FROM servers WHERE host = ? AND port = ? AND email = ? AND id != ?',
+                (host, port, email, exclude_id)
+            ).fetchone()
+        else:
+            existing = conn.execute(
+                'SELECT id FROM servers WHERE host = ? AND port = ? AND email = ?',
+                (host, port, email)
+            ).fetchone()
+        conn.close()
+        if existing:
+            return False, f"Der Server {host} mit Port {port} und der E-Mail {email} ist bereits registriert."
+
+    # 2. DNS / FQDN Auflösungsprüfung
+    try:
+        socket.gethostbyname(host)
+    except socket.gaierror:
+        return False, f"DNS-Fehler: Der Host '{host}' konnte nicht aufgelöst werden (FQDN ungültig oder nicht vorhanden)."
+
+    # 3. Port-Erreichbarkeit prüfen
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(3)
+        sock.connect((host, port))
+        sock.close()
+    except Exception as e:
+        return False, f"Verbindungsfehler: Server ist unter {host}:{port} nicht erreichbar (Port geschlossen oder Timeout)."
+
+    # 4. TLS Checken
+    try:
+        checker = SSLCheck(host, port)
+        checker.get_cert()
+    except Exception as e:
+        return False, f"TLS-Prüfung fehlgeschlagen: Unter {host}:{port} konnte kein gültiger TLS-Handshake durchgeführt werden ({str(e)})."
+
+    return True, ""
+
+
+def get_page_links(current_page, total_pages):
+    """Erzeugt eine saubere Liste von Seitenzahlen und Auslassungen für die Paginierung"""
+    if total_pages <= 7:
+        return list(range(1, total_pages + 1))
+
+    pages = []
+    for p in range(1, total_pages + 1):
+        if p == 1 or p == total_pages or (current_page - 2 <= p <= current_page + 2):
+            pages.append(p)
+        elif pages[-1] != '...':
+            pages.append('...')
+    return pages
 
 
 @app.route('/', methods=['GET', 'POST'])
@@ -185,14 +259,103 @@ def index():
             sc = SSLCheck(h, p)
             sc.get_cert()
             d, c = sc.results, sc.chain_info
-
             nmap_res = sc.get_nmap_ciphers()
-
         except Exception as ex: e = str(ex)
     return render_template('index.html', host=h, port=p, data=d, chain=c, error=e,
             nmap_data=nmap_res, now=datetime.datetime.now().strftime('%d.%m.%Y %H:%M:%S'))
 
-if __name__ == '__main__':
-    # Flask mit SSL starten
-    app.run(host="0.0.0.0", debug=True, port=5000, ssl_context=('/etc/olbcert/fullchain.pem', '/etc/olbcert/server.key'))
+@app.route('/servers', methods=['GET', 'POST'])
+def servers():
+    conn = get_db_connection()
+    search_query = request.args.get('search', '').strip()
 
+    # Paginierungs-Parameter
+    try:
+        page = int(request.args.get('page', 1))
+    except ValueError:
+        page = 1
+
+    PER_PAGE = 25  # Anzahl der Einträge pro Seite
+    offset = (page - 1) * PER_PAGE
+
+    form_host = ''
+    form_port = 443
+    form_email = ''
+
+    if request.method == 'POST':
+        action = request.form.get('action')
+        form_host = request.form.get('host', '').strip()
+        port_raw = request.form.get('port', '443')
+        form_email = request.form.get('email', '').strip()
+
+        try:
+            form_port = int(port_raw) if port_raw.isdigit() else 443
+        except:
+            form_port = 443
+
+        if action == 'add':
+            if form_host and form_email:
+                is_valid, error_message = validate_server_host(form_host, form_port, form_email)
+                if not is_valid:
+                    flash(error_message, 'danger')
+                else:
+                    conn.execute('INSERT INTO servers (host, port, email) VALUES (?, ?, ?)', (form_host, form_port, form_email))
+                    conn.commit()
+                    flash('Server erfolgreich überprüft und hinzugefügt.', 'success')
+            else:
+                flash('Bitte alle Pflichtfelder ausfüllen.', 'warning')
+
+        elif action == 'edit':
+            server_id = request.form.get('id')
+            if server_id and form_host and form_email:
+                is_valid, error_message = validate_server_host(form_host, form_port, form_email, exclude_id=server_id)
+                if not is_valid:
+                    flash(f"Änderung verworfen: {error_message}", 'danger')
+                else:
+                    conn.execute('UPDATE servers SET host = ?, port = ?, email = ? WHERE id = ?', (form_host, form_port, form_email, server_id))
+                    conn.commit()
+                    flash('Server-Eintrag aktualisiert und verifiziert.', 'success')
+                    conn.close()
+                    return redirect(url_for('servers', search=search_query, page=page))
+
+        elif action == 'delete':
+            server_id = request.form.get('id')
+            if server_id:
+                conn.execute('DELETE FROM servers WHERE id = ?', (server_id,))
+                conn.commit()
+            conn.close()
+            return redirect(url_for('servers', search=search_query, page=page))
+
+    # SQL Abfragen mit Filter, Limit und Offset
+    if search_query:
+        count_query = 'SELECT COUNT(*) FROM servers WHERE host LIKE ? OR email LIKE ? OR CAST(port AS TEXT) LIKE ?'
+        param = f'%{search_query}%'
+        total_count = conn.execute(count_query, (param, param, param)).fetchone()[0]
+
+        data_query = 'SELECT * FROM servers WHERE host LIKE ? OR email LIKE ? OR CAST(port AS TEXT) LIKE ? ORDER BY host LIMIT ? OFFSET ?'
+        server_list = conn.execute(data_query, (param, param, param, PER_PAGE, offset)).fetchall()
+    else:
+        total_count = conn.execute('SELECT COUNT(*) FROM servers').fetchone()[0]
+        data_query = 'SELECT * FROM servers ORDER BY host LIMIT ? OFFSET ?'
+        server_list = conn.execute(data_query, (PER_PAGE, offset)).fetchall()
+
+
+    # Gesamtanzahl Seiten berechnen
+    total_pages = max(1, (total_count + PER_PAGE - 1) // PER_PAGE)
+    page_links = get_page_links(page, total_pages)
+    conn.close()
+
+    return render_template('servers.html',
+                           servers=server_list,
+                           search=search_query,
+                           page=page,
+                           total_pages=total_pages,
+                           total_count=total_count,
+                           page_links = page_links,
+                           form_host=form_host,
+                           form_port=form_port,
+                           form_email=form_email,
+                           now=datetime.datetime.now().strftime('%d.%m.%Y %H:%M:%S'))
+
+if __name__ == '__main__':
+    app.run(host="0.0.0.0", debug=True, port=5001, ssl_context=('/etc/olbcert/fullchain.pem', '/etc/olbcert/server.key'))
